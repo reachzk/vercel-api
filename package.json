@@ -1,0 +1,13 @@
+{
+  "name": "makeyourclips-vercel-api",
+  "version": "1.0.0",
+  "description": "Serverless functions for Stripe payment processing for MakeYourClips.",
+  "main": "api/create-checkout.js",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "stripe": "^14.12.0",
+    "firebase-admin": "^12.0.0"
+  }
+}
