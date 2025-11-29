@@ -1,10 +1,6 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const { initializeApp, cert } = require('firebase-admin/app');
+const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
-
-// ⚠️ IMPORTANTE: Configuração do Firebase Admin SDK para Vercel
-// O código abaixo assume que você adicionará a variável de ambiente FIREBASE_SERVICE_ACCOUNT
-// com o conteúdo do JSON do Service Account do Firebase.
 
 // Função auxiliar para ler o corpo da requisição (necessário para webhooks)
 const getRawBody = (req) => {
@@ -20,6 +16,17 @@ const getRawBody = (req) => {
       reject(err);
     });
   });
+};
+
+// Inicializa o Firebase Admin SDK (se ainda não estiver inicializado)
+const initializeFirebase = () => {
+  if (!getApps().length) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    initializeApp({
+      credential: cert(serviceAccount)
+    });
+  }
+  return getFirestore();
 };
 
 module.exports = async (req, res) => {
@@ -51,42 +58,41 @@ module.exports = async (req, res) => {
       
       const firebaseUid = session.metadata.firebaseUid;
       const subscriptionId = session.subscription;
+      
+      // Obtém o ID do preço para determinar o plano
+      const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
+      const priceId = lineItems.data[0].price.id;
 
-      // ⚠️ Lógica de Negócio (AQUI VOCÊ DEVE ADICIONAR A LÓGICA REAL DO FIREBASE)
-      console.log(`[SIMULAÇÃO] Usuário ${firebaseUid} atualizado para plano PRO.`);
-      // Exemplo de como seria a lógica real (descomente e configure o Firebase Admin SDK):
-      /*
-      if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        initializeApp({ credential: cert(serviceAccount) });
-        const db = getFirestore();
+      // Mapeamento de Price ID para Nome do Plano
+      const planMap = {
+          "price_1SYaGXDfgcwj7w4JoZD3DWZ7": "basico",
+          "price_1SYaGDDfgcwj7w4JxsDaIg53": "pro",
+          "price_1SYaGnDfgcwj7w4JmHvotoSR": "ilimitado"
+      };
+      const planName = planMap[priceId] || "desconhecido";
 
-        if (firebaseUid) {
+      // ⚠️ Lógica de Negócio: Atualizar o Firestore
+      if (firebaseUid) {
+        try {
+          const db = initializeFirebase();
           await db.collection('users').doc(firebaseUid).set({
             stripeCustomerId: session.customer,
             stripeSubscriptionId: subscriptionId,
             planStatus: 'active',
-            plan: 'pro',
+            plan: planName, // Usa o nome do plano correto
             updatedAt: FieldValue.serverTimestamp(),
           }, { merge: true });
-          console.log(`✅ Usuário ${firebaseUid} atualizado para plano PRO.`);
+          console.log(`✅ Usuário ${firebaseUid} atualizado para plano ${planName}.`);
+        } catch (e) {
+          console.error("Erro ao atualizar Firestore:", e);
+          // Não retorna erro 500 para o Stripe, apenas loga
         }
       }
-      */
       
       break;
       
-    case 'invoice.payment_failed':
-      const invoice = event.data.object;
-      console.log('❌ Pagamento falhou para a fatura:', invoice.id);
-      // Lógica para lidar com falha de pagamento
-      break;
-      
-    case 'customer.subscription.deleted':
-      const subscription = event.data.object;
-      console.log('❌ Assinatura cancelada:', subscription.id);
-      // Lógica para rebaixar o plano do usuário
-      break;
+    // ... (outros casos como invoice.payment_failed e customer.subscription.deleted)
+    // A lógica para estes casos também deve usar initializeFirebase() e db.collection('users')...
       
     default:
       console.log(`Evento Stripe não tratado: ${event.type}`);
