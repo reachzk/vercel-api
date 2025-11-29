@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/**/*.js": {
-      "runtime": "nodejs18.x" // Use a versão mais recente suportada
+      "runtime": "nodejs18.x"
     }
   }
 }
